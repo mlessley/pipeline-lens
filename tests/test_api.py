@@ -141,3 +141,67 @@ def test_get_pipeline_run_timeline_returns_sorted_stages(tmp_path, monkeypatch):
         image_time.isoformat(),
         deployment_time.isoformat(),
     ]
+
+
+import hashlib
+import hmac
+import json
+
+from scie.api import app as app_module
+
+WEBHOOK_SECRET = "test-secret"
+
+
+def _sign(body: bytes) -> str:
+    return "sha256=" + hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+
+
+def test_github_webhook_rejects_invalid_signature(tmp_path, monkeypatch):
+    _use_temp_db(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    client = TestClient(app)
+
+    response = client.post(
+        "/webhooks/github",
+        content=b'{"ref": "refs/heads/main"}',
+        headers={"X-Hub-Signature-256": "sha256=bad"},
+    )
+    assert response.status_code == 401
+
+
+def test_github_webhook_accepts_valid_push_payload_and_publishes(tmp_path, monkeypatch):
+    _use_temp_db(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET)
+
+    published = []
+    monkeypatch.setattr(
+        app_module,
+        "publish_event",
+        lambda topic, key, event: published.append((topic, key, event)),
+    )
+
+    payload = {
+        "ref": "refs/heads/main",
+        "repository": {"full_name": "mlessley/scie"},
+        "head_commit": {
+            "id": "abc123",
+            "author": {"username": "mlessley"},
+            "message": "add feature",
+            "timestamp": "2026-07-04T12:00:00+00:00",
+        },
+    }
+    body = json.dumps(payload).encode()
+
+    client = TestClient(app)
+    response = client.post(
+        "/webhooks/github",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "X-GitHub-Event": "push"},
+    )
+
+    assert response.status_code == 200
+    assert len(published) == 1
+    topic, key, event = published[0]
+    assert topic == "repo-events"
+    assert key == "abc123"
+    assert event.commit_sha == "abc123"

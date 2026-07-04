@@ -1,9 +1,21 @@
-from fastapi import Depends, FastAPI, HTTPException
+import json
+import os
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session
 
 from scie.db import get_session, init_db
+from scie.events import publish_event
 from scie.models import PipelineRun, PipelineStatus
 from scie.store import PipelineRunStore
+from scie.webhooks.github import (
+    InvalidSignatureError,
+    parse_github_push_payload,
+    parse_github_workflow_run_payload,
+    verify_github_signature,
+)
+
+GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "dev-secret")
 
 app = FastAPI(title="Supply Chain Insights Engine")
 
@@ -80,3 +92,25 @@ def list_services(session: Session = Depends(get_session)) -> list[dict]:
         }
         for name, run in latest.items()
     ]
+
+
+@app.post("/webhooks/github")
+async def github_webhook(
+    request: Request,
+    x_hub_signature_256: str | None = Header(default=None),
+    x_github_event: str | None = Header(default=None),
+) -> dict:
+    body = await request.body()
+    try:
+        verify_github_signature(body, x_hub_signature_256, GITHUB_WEBHOOK_SECRET)
+    except InvalidSignatureError:
+        raise HTTPException(status_code=401, detail="invalid signature")
+
+    payload = json.loads(body)
+    if x_github_event == "workflow_run":
+        event = parse_github_workflow_run_payload(payload)
+    else:
+        event = parse_github_push_payload(payload)
+
+    publish_event("repo-events", key=event.commit_sha, event=event)
+    return {"status": "accepted"}
