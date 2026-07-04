@@ -12,12 +12,26 @@ services:
     ports:
       - "19092:19092"
 
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_USER=temporal
+      - POSTGRES_PASSWORD=temporal
+    ports:
+      - "5432:5432"
+
   temporal:
     image: temporalio/auto-setup:latest
     ports:
       - "7233:7233"
     environment:
-      - DB=sqlite
+      - DB=postgres12
+      - POSTGRES_SEEDS=postgres
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - DB_PORT=5432
+    depends_on:
+      - postgres
 
   api:
     build: .
