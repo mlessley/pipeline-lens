@@ -2526,6 +2526,144 @@ git commit -m "chore: add GitHub Actions CI pipeline"
 
 ---
 
+### Task 17: Worker entrypoint, Compose wiring, synthetic seed script, and README
+
+**Added 2026-07-04 after the final whole-branch review of Tasks 1-16.** That review found a real, plan-level gap no per-task review could catch: Task 12's bridge calls `client.start_workflow(...)`, which enqueues a workflow task, but nothing in `src/` ever runs a Temporal `Worker` that registers `PipelineRunWorkflow` and its three activities and polls `scie-task-queue` — so in a live run, workflows would sit pending forever. Combined with Docker Compose never running the bridge either, the whole RedPanda→Temporal path is dormant in the shipped stack, and there's no committed way to populate the dashboard with synthetic data for a demo. This task closes all four gaps.
+
+**Files:**
+- Create: `src/scie/worker.py`
+- Test: `tests/test_worker.py`
+- Create: `src/scie/seed.py`
+- Modify: `docker-compose.yml`
+- Modify (from empty): `README.md`
+
+**Interfaces:**
+- Consumes: `PipelineRunWorkflow` (Task 11); `wait_for_ecr_scan_activity`, `get_k8s_deployment_state_activity`, `write_pipeline_run_activity` (Task 10); `pydantic_data_converter` (already used in Task 12's `bridge.py`, same pattern applies here); `generate_synthetic_fleet` (Task 4); `PipelineRunStore`, `engine`, `init_db` (Task 5).
+- Produces: `build_worker(client) -> Worker` and `main()` in `src/scie/worker.py` (mirrors `bridge.py`'s `build_consumer()`/`main()` split so the registration logic is unit-testable without running the worker's blocking poll loop); a `main()` in `src/scie/seed.py` that seeds the fleet against the same DB the API uses; `bridge` and `worker` services in `docker-compose.yml`; a real `README.md`.
+
+- [ ] **Step 1: Write the worker entrypoint**
+
+Follow `src/scie/bridge.py`'s existing shape exactly (it already solves the "real client, testable helper, blocking main loop" problem once — reuse the pattern, don't reinvent it):
+
+```python
+# src/scie/worker.py
+import asyncio
+import os
+
+from temporalio.client import Client
+from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.worker import Worker
+
+from scie.workflows.activities import (
+    get_k8s_deployment_state_activity,
+    wait_for_ecr_scan_activity,
+    write_pipeline_run_activity,
+)
+from scie.workflows.pipeline_run_workflow import PipelineRunWorkflow
+
+TASK_QUEUE = "scie-task-queue"
+
+
+def build_worker(client: Client) -> Worker:
+    return Worker(
+        client,
+        task_queue=TASK_QUEUE,
+        workflows=[PipelineRunWorkflow],
+        activities=[
+            wait_for_ecr_scan_activity,
+            get_k8s_deployment_state_activity,
+            write_pipeline_run_activity,
+        ],
+    )
+
+
+async def main() -> None:
+    # See bridge.py's main() for why pydantic_data_converter is required here.
+    client = await Client.connect(
+        os.environ.get("TEMPORAL_ADDRESS", "localhost:7233"),
+        data_converter=pydantic_data_converter,
+    )
+    worker = build_worker(client)
+    await worker.run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Write `tests/test_worker.py` to verify `build_worker` registers the right task queue, workflow, and activities. A plain `unittest.mock.MagicMock()` client will NOT work here — `Worker.__init__` validates the client's internal service-client shape and raises `TypeError` on a bare mock. Use the same real-test-client pattern Task 11's `tests/test_pipeline_run_workflow.py` already uses (`temporalio.testing.WorkflowEnvironment.start_time_skipping()`, which gives a real `env.client`), construct the worker against `env.client`, and assert on whatever the installed `temporalio` version's `Worker` actually exposes for inspection (at last check: `.task_queue`, and a `.config` dict — confirm the exact keys/shape for this installed version rather than assuming, the way Task 11 confirmed the data-converter behavior empirically instead of guessing). If no clean public introspection point exists, a passing construction (no exception) plus `.task_queue == TASK_QUEUE` is an acceptable minimum bar — don't reach for private attributes beyond `.config` to force a deeper assertion.
+
+- [ ] **Step 2: Write the seed script**
+
+```python
+# src/scie/seed.py
+from sqlmodel import Session
+
+from scie.db import engine, init_db
+from scie.store import PipelineRunStore
+from scie.synthetic import generate_synthetic_fleet
+
+
+def main(count: int = 20) -> None:
+    init_db()
+    fleet = generate_synthetic_fleet(count=count)
+    with Session(engine) as session:
+        store = PipelineRunStore(session)
+        for run in fleet:
+            store.upsert(run)
+    print(f"Seeded {len(fleet)} synthetic pipeline runs.")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+No dedicated test file is required for this script (it's a thin composition of already-tested `generate_synthetic_fleet` and `PipelineRunStore.upsert` — Tasks 4 and 5 already cover their correctness). Verify it for real instead: run it against a temp `SCIE_DATABASE_URL`, then query the same DB directly (or via the API, as Task 14's implementer already did) to confirm rows landed.
+
+- [ ] **Step 3: Wire `bridge` and `worker` into Docker Compose**
+
+Add two services to `docker-compose.yml`, alongside the existing `api`/`dashboard`. They must share `api`'s `scie-data` volume and `SCIE_DATABASE_URL` — the worker's `write_pipeline_run_activity` and the API's query endpoints must read/write the *same* SQLite file, not two different ones:
+
+```yaml
+  bridge:
+    build: .
+    command: ["uv", "run", "python", "-m", "scie.bridge"]
+    environment:
+      - REDPANDA_BROKERS=redpanda:9092
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - redpanda
+      - temporal
+
+  worker:
+    build: .
+    command: ["uv", "run", "python", "-m", "scie.worker"]
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - SCIE_DATABASE_URL=sqlite:////data/scie.db
+    volumes:
+      - scie-data:/data
+    depends_on:
+      - temporal
+```
+
+Verify for real (Docker is available in this environment): `docker compose build`, then `docker compose up -d redpanda postgres temporal api worker bridge`, confirm via `docker compose ps`/`docker compose logs` that `worker` and `bridge` both reach a running (non-crash-looping) state — same verification bar Task 13 already established. Tear down cleanly afterward.
+
+- [ ] **Step 4: Write the README**
+
+Replace the empty `README.md` with real content covering: what this project is and why it exists (one paragraph); the architecture (the real event flow: GitHub webhook → RedPanda → bridge → Temporal workflow → activities (ECR scan, K8s state) → SQLite → FastAPI → Streamlit — plus the synthetic-fleet path for demo purposes); and how to run it locally (`docker compose up -d`, then seed via `uv run python -m scie.seed`, then open the dashboard). Keep it concise — this is a portfolio README, not a full user manual.
+
+- [ ] **Step 5: Run the full suite and commit**
+
+Run: `uv run pytest -v` — expect the existing 36 plus the new worker test(s), all passing, no regressions.
+
+```bash
+git add src/scie/worker.py tests/test_worker.py src/scie/seed.py docker-compose.yml README.md
+git commit -m "feat: add Temporal worker entrypoint, seed script, and wire the full stack together"
+```
+
+---
+
 ## Self-Review Notes
 
 - **Spec coverage:** every v1 item from the spec's "Scope: v1 vs. stretch" section has a task — GitHub Actions/Trivy/OIDC/ECR (Tasks 15-16), Terraform EKS+IAM (Task 15), targeted K8s observation (Task 10), RedPanda+Temporal correlation (Tasks 8, 10-12), FastAPI webhook+query API (Tasks 6, 9), Streamlit fleet+detail view (Task 14), synthetic fleet generator (Task 4), Docker Compose (Task 13). Stretch items are explicitly excluded per the Global Constraints section rather than half-built.
