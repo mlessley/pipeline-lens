@@ -1,0 +1,47 @@
+# docker-compose.yml
+services:
+  redpanda:
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=sqlite
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - REDPANDA_BROKERS=redpanda:9092
+      - TEMPORAL_ADDRESS=temporal:7233
+      - SCIE_DATABASE_URL=sqlite:////data/scie.db
+    volumes:
+      - scie-data:/data
+    depends_on:
+      - redpanda
+      - temporal
+
+  dashboard:
+    build: .
+    command: ["uv", "run", "streamlit", "run", "src/scie/ui/streamlit_app.py", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    environment:
+      - SCIE_API_URL=http://api:8000
+    depends_on:
+      - api
+
+volumes:
+  scie-data:
