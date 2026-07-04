@@ -1,6 +1,9 @@
 .vscode/
 .worktrees/
 *.db
+.env
+dev-up.sh
+dev-down.sh
 terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup

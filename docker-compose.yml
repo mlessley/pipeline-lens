@@ -23,7 +23,7 @@ services:
   temporal:
     image: temporalio/auto-setup:latest
     ports:
-      - "7233:7233"
+      - "${SCIE_TEMPORAL_PORT:-7233}:7233"
     environment:
       - DB=postgres12
       - POSTGRES_SEEDS=postgres
@@ -36,7 +36,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "${SCIE_API_PORT:-8000}:8000"
     environment:
       - REDPANDA_BROKERS=redpanda:9092
       - TEMPORAL_ADDRESS=temporal:7233
