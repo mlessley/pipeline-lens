@@ -205,3 +205,47 @@ def test_github_webhook_accepts_valid_push_payload_and_publishes(tmp_path, monke
     assert topic == "repo-events"
     assert key == "abc123"
     assert event.commit_sha == "abc123"
+
+
+def test_github_webhook_accepts_valid_workflow_run_payload_and_publishes(tmp_path, monkeypatch):
+    _use_temp_db(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET)
+
+    published = []
+    monkeypatch.setattr(
+        app_module,
+        "publish_event",
+        lambda topic, key, event: published.append((topic, key, event)),
+    )
+
+    payload = {
+        "repository": {"full_name": "mlessley/scie"},
+        "workflow_run": {
+            "id": 998877,
+            "head_sha": "def456",
+            "head_branch": "main",
+            "conclusion": "success",
+            "updated_at": "2026-07-04T12:05:00+00:00",
+            "head_commit": {
+                "author": {"name": "mlessley"},
+                "message": "add feature",
+            },
+        },
+    }
+    body = json.dumps(payload).encode()
+
+    client = TestClient(app)
+    response = client.post(
+        "/webhooks/github",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "X-GitHub-Event": "workflow_run"},
+    )
+
+    assert response.status_code == 200
+    assert len(published) == 1
+    topic, key, event = published[0]
+
+    expected_event = app_module.parse_github_workflow_run_payload(payload)
+    assert topic == "repo-events"
+    assert key == expected_event.commit_sha
+    assert event == expected_event
