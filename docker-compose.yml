@@ -57,5 +57,27 @@ services:
     depends_on:
       - api
 
+  bridge:
+    build: .
+    command: ["uv", "run", "python", "-m", "scie.bridge"]
+    environment:
+      - REDPANDA_BROKERS=redpanda:9092
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - redpanda
+      - temporal
+
+  worker:
+    build: .
+    command: ["uv", "run", "python", "-m", "scie.worker"]
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - SCIE_DATABASE_URL=sqlite:////data/scie.db
+    volumes:
+      - scie-data:/data
+    depends_on:
+      - temporal
+    restart: on-failure:5
+
 volumes:
   scie-data:
