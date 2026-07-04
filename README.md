@@ -44,7 +44,7 @@ dashboard code paths as the real path above, just without going through RedPanda
 
 ```bash
 docker compose up -d
-uv run python -m scie.seed
+docker compose exec api uv run python -m scie.seed
 ```
 
 Then open the dashboard at `http://localhost:8501` (API at `http://localhost:8000`).

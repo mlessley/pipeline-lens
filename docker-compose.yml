@@ -66,6 +66,7 @@ services:
     depends_on:
       - redpanda
       - temporal
+    restart: on-failure:5
 
   worker:
     build: .
