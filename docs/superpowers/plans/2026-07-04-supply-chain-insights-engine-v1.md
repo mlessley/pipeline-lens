@@ -586,7 +586,7 @@ def generate_synthetic_fleet(count: int = 20, seed: int | None = None) -> list[P
             vulnerabilities=vulnerabilities,
         )
         deployment = DeploymentInfo(
-            cluster="scie-poc",
+            cluster="scie",
             namespace="default",
             replicas_desired=2,
             replicas_ready=2,
@@ -1643,9 +1643,10 @@ git commit -m "feat: add Temporal activities for ECR scan and K8s enrichment"
 ```python
 # tests/test_pipeline_run_workflow.py
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
+from temporalio import activity
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -1663,6 +1664,14 @@ from scie.workflows.pipeline_run_workflow import PipelineRunWorkflow
 NOW = datetime.now(timezone.utc)
 
 
+# Fakes are registered under the SAME activity type name as the real
+# activities (via `@activity.defn(name=...)`) so the workflow — which
+# schedules activities by name — invokes these instead of the real,
+# boto3/kubernetes-backed implementations. Temporal's test Worker resolves
+# activities by registered name, not by the Python object the workflow
+# imported, so this is the correct way to substitute fakes; there is no
+# `.fn` attribute on a `@activity.defn`-decorated function to reassign.
+@activity.defn(name="wait_for_ecr_scan_activity")
 async def fake_wait_for_ecr_scan_activity(ecr_repo: str, image_tag: str) -> ImageInfo:
     return ImageInfo(
         digest="sha256:abc",
@@ -1679,6 +1688,7 @@ async def fake_wait_for_ecr_scan_activity(ecr_repo: str, image_tag: str) -> Imag
     )
 
 
+@activity.defn(name="get_k8s_deployment_state_activity")
 async def fake_get_k8s_deployment_state_activity(namespace: str, deployment_name: str, cluster: str) -> DeploymentInfo:
     return DeploymentInfo(
         cluster=cluster,
@@ -1693,6 +1703,7 @@ async def fake_get_k8s_deployment_state_activity(namespace: str, deployment_name
 written_runs = []
 
 
+@activity.defn(name="write_pipeline_run_activity")
 async def fake_write_pipeline_run_activity(run_json: str) -> None:
     written_runs.append(run_json)
 
@@ -1700,13 +1711,6 @@ async def fake_write_pipeline_run_activity(run_json: str) -> None:
 @pytest.mark.asyncio
 async def test_successful_build_produces_deployed_with_findings():
     written_runs.clear()
-
-    from scie.workflows import pipeline_run_workflow as wf_module
-
-    wf_module.wait_for_ecr_scan_activity.fn = fake_wait_for_ecr_scan_activity
-    wf_module.get_k8s_deployment_state_activity.fn = fake_get_k8s_deployment_state_activity
-    wf_module.write_pipeline_run_activity.fn = fake_write_pipeline_run_activity
-
     task_queue = f"test-queue-{uuid.uuid4()}"
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
@@ -1858,7 +1862,7 @@ class PipelineRunWorkflow:
 
         run.deployment = await workflow.execute_activity(
             get_k8s_deployment_state_activity,
-            args=["default", service_name, "scie-poc"],
+            args=["default", service_name, service_name],
             start_to_close_timeout=timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=5, backoff_coefficient=2.0),
         )
@@ -2207,7 +2211,7 @@ git commit -m "feat: add Streamlit dashboard"
 
 ---
 
-### Task 15: Terraform for AWS (ECR, IAM OIDC role, EKS)
+### Task 15: Terraform for AWS (ECR, IAM OIDC role, EKS, initial K8s Deployment)
 
 **Files:**
 - Create: `terraform/main.tf`
@@ -2215,9 +2219,11 @@ git commit -m "feat: add Streamlit dashboard"
 - Create: `terraform/ecr.tf`
 - Create: `terraform/iam.tf`
 - Create: `terraform/eks.tf`
+- Create: `terraform/k8s.tf`
 
 **Interfaces:**
-- Produces: an ECR repository, an IAM role assumable by GitHub Actions via OIDC, and an EKS cluster — consumed by Task 16's CI workflow (which pushes to the ECR repo and assumes the IAM role) and by the K8s activity in Task 10 (which targets the EKS cluster).
+- Produces: an ECR repository, an IAM role assumable by GitHub Actions via OIDC, an EKS cluster, and an initial `kubernetes_deployment` named `var.project_name` (default `scie`) in the `default` namespace with a container of the same name — consumed by Task 16's CI workflow (which pushes to the ECR repo, assumes the IAM role, and runs `kubectl set image` against this Deployment) and by the K8s activity in Task 10 (`get_k8s_deployment_state_activity`, which reads this Deployment's status). The Deployment must exist before the first CI run, since `kubectl set image` only updates an existing Deployment — it does not create one.
+- **Naming constraint carried from the spec's correlation design:** the ECR repository name, the K8s Deployment name, and the container name must all equal `var.project_name`, and `var.project_name` must equal the actual GitHub repository's short name — Task 11's workflow derives its ECR/K8s lookup key as `RepoEvent.repo.split("/")[-1]`, so any mismatch here breaks the real (non-synthetic) correlation path at runtime, not just at review time.
 
 - [ ] **Step 1: Write the provider and variables**
 
@@ -2228,6 +2234,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.30"
     }
   }
 }
@@ -2245,8 +2255,9 @@ variable "aws_region" {
 }
 
 variable "project_name" {
-  type    = string
-  default = "scie-poc"
+  description = "Also used as the ECR repo name and K8s Deployment/container name — must equal the GitHub repo's short name, since the correlation workflow (Task 11) derives its ECR/K8s lookup key from RepoEvent.repo.split('/')[-1]."
+  type        = string
+  default     = "scie"
 }
 
 variable "github_repo" {
@@ -2353,7 +2364,65 @@ data "aws_subnets" "default" {
 }
 ```
 
-- [ ] **Step 5: Validate**
+- [ ] **Step 5: Write the initial K8s Deployment**
+
+The GitHub Actions CI workflow (Task 16) only runs `kubectl set image` to update an *existing* Deployment's image on each push — it does not create the Deployment. This step creates it once, via the same `terraform apply` that creates the cluster, so there's nothing to run/administer afterward.
+
+```hcl
+# terraform/k8s.tf
+data "aws_eks_cluster_auth" "this" {
+  name = module.eks.cluster_name
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.this.token
+}
+
+resource "kubernetes_deployment" "scie" {
+  metadata {
+    name      = var.project_name
+    namespace = "default"
+    labels = {
+      app = var.project_name
+    }
+  }
+
+  spec {
+    replicas = 2
+
+    selector {
+      match_labels = {
+        app = var.project_name
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = var.project_name
+        }
+      }
+
+      spec {
+        container {
+          name = var.project_name
+          # Bootstrap placeholder so the Deployment exists before the first
+          # real CI push. ci.yml (Task 16) replaces this via `kubectl set
+          # image` on every push to main — this value is never read again
+          # after the first successful CI run.
+          image = "public.ecr.aws/docker/library/nginx:stable"
+        }
+      }
+    }
+  }
+
+  depends_on = [module.eks]
+}
+```
+
+- [ ] **Step 6: Validate**
 
 Run:
 ```bash
@@ -2362,14 +2431,14 @@ terraform init
 terraform validate
 terraform plan -var="github_repo=mlessley/scie"
 ```
-Expected: `terraform validate` reports `Success!`; `terraform plan` shows the resources to be created with no errors (review the plan before running `terraform apply` manually — this is a real-money step, not part of automated CI).
+Expected: `terraform validate` reports `Success!`; `terraform plan` shows the resources to be created (ECR repo, IAM role, EKS cluster, Deployment) with no errors (review the plan before running `terraform apply` manually — this is a real-money step, not part of automated CI).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 cd ..
 git add terraform/
-git commit -m "chore: add Terraform for ECR, GitHub OIDC role, and EKS"
+git commit -m "chore: add Terraform for ECR, GitHub OIDC role, EKS, and initial Deployment"
 ```
 
 ---
@@ -2403,19 +2472,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build image
-        run: docker build -t scie-poc:${{ github.sha }} .
+        run: docker build -t scie:${{ github.sha }} .
 
       - name: Trivy scan gate
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: scie-poc:${{ github.sha }}
+          image-ref: scie:${{ github.sha }}
           exit-code: "1"
           severity: "CRITICAL,HIGH"
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/scie-poc-github-actions
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/scie-github-actions
           aws-region: us-east-1
 
       - name: Login to ECR
@@ -2424,18 +2493,20 @@ jobs:
 
       - name: Tag and push image
         run: |
-          docker tag scie-poc:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/scie-poc:${{ github.sha }}
-          docker push ${{ steps.ecr-login.outputs.registry }}/scie-poc:${{ github.sha }}
+          docker tag scie:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }}
+          docker push ${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }}
 
       - name: Deploy to EKS
         run: |
-          aws eks update-kubeconfig --name scie-poc --region us-east-1
-          kubectl set image deployment/scie-poc scie-poc=${{ steps.ecr-login.outputs.registry }}/scie-poc:${{ github.sha }} --record
+          aws eks update-kubeconfig --name scie --region us-east-1
+          kubectl set image deployment/scie scie=${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }} --record
 ```
+
+Note: the ECR repository name, IAM role name, EKS cluster name, and K8s Deployment/container name here (`scie`) must all equal `var.project_name` from Task 15's Terraform and the actual GitHub repository's short name — this is the same naming constraint recorded in Task 15's Interfaces block, not a new decision.
 
 - [ ] **Step 2: Verify locally as far as possible without pushing**
 
-Run: `docker build -t scie-poc:local .`
+Run: `docker build -t scie:local .`
 Expected: image builds successfully (validates the Dockerfile from Task 13 independent of the GH Actions runner).
 
 - [ ] **Step 3: Push to a real branch and verify in GitHub's Actions tab**
@@ -2460,3 +2531,4 @@ git commit -m "chore: add GitHub Actions CI pipeline"
 - **Spec coverage:** every v1 item from the spec's "Scope: v1 vs. stretch" section has a task — GitHub Actions/Trivy/OIDC/ECR (Tasks 15-16), Terraform EKS+IAM (Task 15), targeted K8s observation (Task 10), RedPanda+Temporal correlation (Tasks 8, 10-12), FastAPI webhook+query API (Tasks 6, 9), Streamlit fleet+detail view (Task 14), synthetic fleet generator (Task 4), Docker Compose (Task 13). Stretch items are explicitly excluded per the Global Constraints section rather than half-built.
 - **Type consistency checked:** `PipelineRun`/`CommitInfo`/`BuildInfo`/`ImageInfo`/`DeploymentInfo` field names are identical across Tasks 2, 4, 5, 9, 10, 11, 14. `compute_overall_status` (Task 3) is the single source of truth for status transitions and is reused (not reimplemented) in Task 4's synthetic generator and Task 11's workflow.
 - **No placeholders:** every step has complete, runnable code; the one previously-considered stall-detection stub was removed by restructuring the workflow (Task 11) to derive `build` info directly from the triggering `workflow_run` event instead of waiting on a signal that v1 doesn't implement.
+- **Pre-flight fixes made during the SDD scan (2026-07-04), before Task 1 was dispatched:** (1) Task 11's test originally monkeypatched a nonexistent `.fn` attribute on `@activity.defn`-decorated functions to fake them out — fixed to register fakes under the real activity type names via `@activity.defn(name=...)`, which is how Temporal's test `Worker` actually substitutes activity implementations. (2) The real (non-synthetic) path had no task provisioning the K8s Deployment resource that Task 16's `kubectl set image` and Task 10's `get_k8s_deployment_state_activity` both require to already exist — added to Task 15 as a Terraform-managed `kubernetes_deployment`. (3) `var.project_name` (ECR repo / EKS cluster / IAM role name), the K8s Deployment/container name, and the literal `scie-poc` strings previously hardcoded in Task 11's workflow and Task 16's `ci.yml` were inconsistent with each other and with `service_name` (derived at runtime from the GitHub repo's short name) — standardized to `scie` everywhere in the real path, with the constraint recorded in Task 15 and Task 16 so it isn't silently reintroduced. Task 3's and Task 4's fixture/synthetic-data uses of similar strings are unaffected (they're arbitrary test/demo values, not tied to real infrastructure) except Task 4's cosmetic `cluster` label, which was aligned to `scie` for dashboard visual consistency with the one real entry.
