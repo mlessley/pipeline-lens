@@ -16,19 +16,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build image
-        run: docker build -t scie:${{ github.sha }} .
+        run: docker build -t pipeline-lens:${{ github.sha }} .
 
       - name: Trivy scan gate
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: scie:${{ github.sha }}
+          image-ref: pipeline-lens:${{ github.sha }}
           exit-code: "1"
           severity: "CRITICAL,HIGH"
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/scie-github-actions
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/pipeline-lens-github-actions
           aws-region: us-east-1
 
       - name: Login to ECR
@@ -37,10 +37,10 @@ jobs:
 
       - name: Tag and push image
         run: |
-          docker tag scie:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }}
-          docker push ${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }}
+          docker tag pipeline-lens:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/pipeline-lens:${{ github.sha }}
+          docker push ${{ steps.ecr-login.outputs.registry }}/pipeline-lens:${{ github.sha }}
 
       - name: Deploy to EKS
         run: |
-          aws eks update-kubeconfig --name scie --region us-east-1
-          kubectl set image deployment/scie scie=${{ steps.ecr-login.outputs.registry }}/scie:${{ github.sha }} --record
+          aws eks update-kubeconfig --name pipeline-lens --region us-east-1
+          kubectl set image deployment/pipeline-lens pipeline-lens=${{ steps.ecr-login.outputs.registry }}/pipeline-lens:${{ github.sha }} --record

@@ -1,4 +1,4 @@
-resource "aws_ecr_repository" "scie" {
+resource "aws_ecr_repository" "pipeline-lens" {
   name                 = var.project_name
   image_tag_mutability = "MUTABLE"
 

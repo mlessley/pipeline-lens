@@ -8,7 +8,7 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
-resource "kubernetes_deployment" "scie" {
+resource "kubernetes_deployment" "pipeline-lens" {
   metadata {
     name      = var.project_name
     namespace = "default"

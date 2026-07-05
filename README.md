@@ -1,4 +1,4 @@
-# Supply Chain Insights Engine
+# Pipeline Lens
 
 A portfolio proof-of-concept that tracks a software service's journey from commit to running
 deployment, correlating events from GitHub Actions, a container registry vulnerability scan, and a
