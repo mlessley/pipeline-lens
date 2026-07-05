@@ -1,0 +1,16 @@
+# Debian base-image (python:3.12-slim) OS-package CVEs with no upstream fix
+# available as of 2026-07-05, in packages this app never invokes at runtime
+# (perl-base, ncurses, gzip, libacl1 are baseline OS packages, not
+# application dependencies). Evaluated switching to a different Debian
+# release (bookworm) and to Alpine — bookworm has more unfixed findings,
+# not fewer, and Alpine breaks the build (confluent-kafka's C extension has
+# no musl-compatible wheel and needs a full build toolchain to compile from
+# source). Re-evaluate this list when a patched package version ships.
+CVE-2026-41992
+CVE-2026-54369
+CVE-2025-69720
+CVE-2026-42496
+CVE-2026-8376
+CVE-2026-42497
+CVE-2026-48962
+CVE-2026-9538
