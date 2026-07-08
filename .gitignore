@@ -8,6 +8,8 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/.terraform.tfstate.lock.info
+terraform/*.tfplan
+terraform/tf-plan*.out
 
 # Python
 __pycache__/

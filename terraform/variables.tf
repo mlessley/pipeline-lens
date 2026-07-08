@@ -13,3 +13,9 @@ variable "github_repo" {
   description = "GitHub repo in 'owner/name' form, for OIDC trust"
   type        = string
 }
+
+variable "budget_alert_email" {
+  description = "Email address that receives AWS Budgets cost alerts"
+  type        = string
+  default     = "mlessley@gmail.com"
+}
