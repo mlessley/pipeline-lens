@@ -94,9 +94,13 @@ and the build-completeness correlation workflow — is written up in
 ```
 docker compose up -d
 docker compose exec api uv run python -m scie.seed
+docker compose exec api uv run python -m scie.graph.seed
 ```
 
-Then open the dashboard at `http://localhost:8501` (API at `http://localhost:8000`).
+Then open the dashboard at `http://localhost:8501` (API at `http://localhost:8000`) — the
+"Graph Explorer" page is in the sidebar. Neo4j Browser is available directly at
+`http://localhost:7474` (user `neo4j`, password `devpassword`) for sanity-checking the
+seeded graph.
 
 ## Tests
 
