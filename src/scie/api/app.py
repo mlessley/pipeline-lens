@@ -4,6 +4,7 @@ import os
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session
 
+from scie.api.graph_routes import router as graph_router
 from scie.db import get_session, init_db
 from scie.events import publish_event
 from scie.models import PipelineRun, PipelineStatus
@@ -18,6 +19,7 @@ from scie.webhooks.github import (
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "dev-secret")
 
 app = FastAPI(title="Supply Chain Insights Engine")
+app.include_router(graph_router)
 
 
 @app.on_event("startup")
