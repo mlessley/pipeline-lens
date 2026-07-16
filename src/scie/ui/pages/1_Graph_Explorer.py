@@ -25,7 +25,6 @@ KEY_PROP_BY_LABEL = {
     "Artifact": "digest",
     "Package": "purl",
     "VulnerabilityID": "id",
-    "Deployment": "cluster",
 }
 
 st.set_page_config(page_title="Graph Explorer", layout="wide")
