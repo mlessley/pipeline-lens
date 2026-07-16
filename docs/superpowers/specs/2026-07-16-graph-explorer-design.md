@@ -46,11 +46,16 @@ pattern (GUAC's core idea) rather than flattening it away:
   -[:HAS_BUILD]->(:Build {id, startTime, ciSystem, status})
      -[:FOR_COMMIT]->(:Commit {sha, author, timestamp})
      -[:PRODUCED]->(:Artifact {digest, name})
-        -[:subject]->(:IsDependency {origin})-[:dependency]->(:Package {purl, name, version})
         -[:DEPLOYED_TO]->(:Deployment {cluster, namespace, environment, deployed_at})
 
-(:Package)<-[:subject]-(:VexStatement {status, origin})-[:vulnerability]->(:VulnerabilityID {id})
+(:IsDependency {origin})-[:subject]->(:Artifact)
+(:IsDependency {origin})-[:dependency]->(:Package {purl, name, version})
+
+(:VexStatement {status, origin})-[:subject]->(:Package)
+(:VexStatement {status, origin})-[:vulnerability]->(:VulnerabilityID {id})
 ```
+
+Both `IsDependency` and `VexStatement` are attestation nodes: the attestation is always the *source* of its edges (`-[:subject]->` the thing it's about, plus one more edge naming the relationship) — never the target. This is the consistent GUAC convention from the design doc, applied uniformly rather than flipped per-edge.
 
 `VexStatement.status` (`affected` / `not_affected` / `fixed`) is the field that
 actually answers "is this exposed right now" — the same package+CVE pairing can
@@ -98,14 +103,15 @@ Cypher query — no query-builder abstraction in between:
 
 ```cypher
 -- vuln_blast_radius(vuln_id): "do we have this vuln in prod"
-MATCH (:VulnerabilityID {id: $vuln_id})<-[:vulnerability]-(vex:VexStatement {status: 'affected'})
-      -[:subject]->(p:Package)
-MATCH (p)<-[:dependency]-(:IsDependency)<-[:subject]-(a:Artifact)-[:DEPLOYED_TO]->(d:Deployment)
+MATCH (:VulnerabilityID {id: $vuln_id})<-[:vulnerability]-(vex:VexStatement {status: 'affected'})-[:subject]->(p:Package)
+MATCH (dep:IsDependency)-[:dependency]->(p)
+MATCH (dep)-[:subject]->(a:Artifact)-[:DEPLOYED_TO]->(d:Deployment)
 RETURN d, a, p, vex
 
 -- vuln_origin_trace(vuln_id): trace back through the Build that produced the artifact
-MATCH (:VulnerabilityID {id: $vuln_id})<-[:vulnerability]-(:VexStatement {status: 'affected'})
-      -[:subject]->(p:Package)<-[:dependency]-(:IsDependency)<-[:subject]-(a:Artifact)
+MATCH (:VulnerabilityID {id: $vuln_id})<-[:vulnerability]-(:VexStatement {status: 'affected'})-[:subject]->(p:Package)
+MATCH (dep:IsDependency)-[:dependency]->(p)
+MATCH (dep)-[:subject]->(a:Artifact)
 MATCH (b:Build)-[:PRODUCED]->(a)
 MATCH (b)-[:FOR_COMMIT]->(c:Commit)
 MATCH (r:Repository)-[:HAS_BUILD]->(b)
@@ -118,7 +124,7 @@ RETURN b.startTime, b.ciSystem, b.status, collect(a) AS artifacts
 ORDER BY b.startTime DESC
 
 -- package_usage(purl): which builds/artifacts pull in this package
-MATCH (p:Package {purl: $purl})<-[:dependency]-(:IsDependency)<-[:subject]-(a:Artifact)
+MATCH (p:Package {purl: $purl})<-[:dependency]-(dep:IsDependency)-[:subject]->(a:Artifact)
 MATCH (b:Build)-[:PRODUCED]->(a)
 MATCH (r:Repository)-[:HAS_BUILD]->(b)
 RETURN r, b, a, p
