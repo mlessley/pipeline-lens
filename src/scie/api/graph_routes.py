@@ -7,6 +7,30 @@ from scie.graph.db import get_driver
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 
+@router.get("/packages")
+def get_list_packages() -> list[dict]:
+    try:
+        return queries.list_packages(get_driver())
+    except ServiceUnavailable:
+        raise HTTPException(status_code=503, detail="graph database unavailable")
+
+
+@router.get("/vulnerabilities")
+def get_list_vulnerabilities() -> list[dict]:
+    try:
+        return queries.list_vulnerabilities(get_driver())
+    except ServiceUnavailable:
+        raise HTTPException(status_code=503, detail="graph database unavailable")
+
+
+@router.get("/repositories")
+def get_list_repositories() -> list[dict]:
+    try:
+        return queries.list_repositories(get_driver())
+    except ServiceUnavailable:
+        raise HTTPException(status_code=503, detail="graph database unavailable")
+
+
 @router.get("/vulnerabilities/{vuln_id}/blast-radius")
 def get_vuln_blast_radius(vuln_id: str) -> dict:
     try:

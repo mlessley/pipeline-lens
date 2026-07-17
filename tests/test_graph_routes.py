@@ -84,3 +84,60 @@ def test_vuln_blast_radius_route_returns_503_when_graph_db_unavailable(monkeypat
     response = client.get("/graph/vulnerabilities/CVE-2025-1111/blast-radius")
 
     assert response.status_code == 503
+
+
+def test_list_packages_route_returns_query_results(monkeypatch):
+    monkeypatch.setattr(
+        graph_routes.queries, "list_packages",
+        lambda driver: [{"purl": "pkg:pypi/openssl@1.0.0", "name": "openssl", "version": "1.0.0"}],
+    )
+    client = TestClient(app)
+
+    response = client.get("/graph/packages")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"purl": "pkg:pypi/openssl@1.0.0", "name": "openssl", "version": "1.0.0"}
+    ]
+
+
+def test_list_vulnerabilities_route_returns_query_results(monkeypatch):
+    monkeypatch.setattr(
+        graph_routes.queries, "list_vulnerabilities",
+        lambda driver: [{"id": "CVE-2014-0160"}],
+    )
+    client = TestClient(app)
+
+    response = client.get("/graph/vulnerabilities")
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": "CVE-2014-0160"}]
+
+
+def test_list_repositories_route_returns_query_results(monkeypatch):
+    monkeypatch.setattr(
+        graph_routes.queries, "list_repositories",
+        lambda driver: [
+            {"url": "https://github.com/example-org/billing-api-1", "name": "billing-api-1"}
+        ],
+    )
+    client = TestClient(app)
+
+    response = client.get("/graph/repositories")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"url": "https://github.com/example-org/billing-api-1", "name": "billing-api-1"}
+    ]
+
+
+def test_list_packages_route_returns_503_when_graph_db_unavailable(monkeypatch):
+    def raise_unavailable(driver):
+        raise ServiceUnavailable("down")
+
+    monkeypatch.setattr(graph_routes.queries, "list_packages", raise_unavailable)
+    client = TestClient(app)
+
+    response = client.get("/graph/packages")
+
+    assert response.status_code == 503
