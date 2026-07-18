@@ -162,3 +162,73 @@ def test_expand_neighbors_respects_relationship_direction():
     result = queries.expand_neighbors(driver, "Package", "purl", "pkg:pypi/openssl@1.0.0")
 
     assert {"source": "dep1", "target": "p1", "type": "dependency"} in result["edges"]
+
+
+def test_list_packages_sends_expected_query():
+    driver = FakeDriver()
+    driver.fake_session.set_result(queries.LIST_PACKAGES_QUERY, [])
+
+    queries.list_packages(driver)
+
+    statement, params = driver.fake_session.calls[0]
+    assert statement == queries.LIST_PACKAGES_QUERY
+    assert params == {}
+
+
+def test_list_packages_returns_flat_records():
+    driver = FakeDriver()
+    driver.fake_session.set_result(
+        queries.LIST_PACKAGES_QUERY,
+        [{"purl": "pkg:pypi/openssl@1.0.0", "name": "openssl", "version": "1.0.0"}],
+    )
+
+    result = queries.list_packages(driver)
+
+    assert result == [{"purl": "pkg:pypi/openssl@1.0.0", "name": "openssl", "version": "1.0.0"}]
+
+
+def test_list_vulnerabilities_sends_expected_query():
+    driver = FakeDriver()
+    driver.fake_session.set_result(queries.LIST_VULNERABILITIES_QUERY, [])
+
+    queries.list_vulnerabilities(driver)
+
+    statement, params = driver.fake_session.calls[0]
+    assert statement == queries.LIST_VULNERABILITIES_QUERY
+    assert params == {}
+
+
+def test_list_vulnerabilities_returns_flat_records():
+    driver = FakeDriver()
+    driver.fake_session.set_result(
+        queries.LIST_VULNERABILITIES_QUERY, [{"id": "CVE-2014-0160"}],
+    )
+
+    result = queries.list_vulnerabilities(driver)
+
+    assert result == [{"id": "CVE-2014-0160"}]
+
+
+def test_list_repositories_sends_expected_query():
+    driver = FakeDriver()
+    driver.fake_session.set_result(queries.LIST_REPOSITORIES_QUERY, [])
+
+    queries.list_repositories(driver)
+
+    statement, params = driver.fake_session.calls[0]
+    assert statement == queries.LIST_REPOSITORIES_QUERY
+    assert params == {}
+
+
+def test_list_repositories_returns_flat_records():
+    driver = FakeDriver()
+    driver.fake_session.set_result(
+        queries.LIST_REPOSITORIES_QUERY,
+        [{"url": "https://github.com/example-org/billing-api-1", "name": "billing-api-1"}],
+    )
+
+    result = queries.list_repositories(driver)
+
+    assert result == [
+        {"url": "https://github.com/example-org/billing-api-1", "name": "billing-api-1"}
+    ]

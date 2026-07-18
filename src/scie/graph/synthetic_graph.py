@@ -23,9 +23,18 @@ PACKAGE_CATALOG = [
 ]
 
 VULNERABILITY_CATALOG = [
-    ("CVE-2025-1111", "pkg:pypi/openssl@1.0.0"),
-    ("CVE-2025-2222", "pkg:pypi/requests@2.25.0"),
-    ("CVE-2025-3333", "pkg:pypi/urllib3@1.26.0"),
+    # Real, historical CVE IDs paired with the (already-real) package names
+    # above, so the graph reads as credible rather than obviously synthetic.
+    # CVE-2014-0160 (Heartbleed) is the most recognizable pairing for
+    # openssl and is used for that reason; it technically affects the 1.0.1
+    # branch rather than the 1.0.0 version string already in PACKAGE_CATALOG
+    # above. Every repo/build/commit in this dataset is synthetic anyway —
+    # "reads as a real CVE ID" is the bar here, not exact version accuracy.
+    # requests/urllib3 below are both real CVEs that do match the paired
+    # version.
+    ("CVE-2014-0160", "pkg:pypi/openssl@1.0.0"),
+    ("CVE-2023-32681", "pkg:pypi/requests@2.25.0"),
+    ("CVE-2021-33503", "pkg:pypi/urllib3@1.26.0"),
 ]
 
 VEX_ORIGINS = ["grype-scan", "vendor-vex-feed"]

@@ -37,6 +37,24 @@ MATCH (n)-[rel]-(neighbor)
 RETURN n, type(rel) AS rel_type, neighbor, startNode(rel) = n AS rel_from_n
 """
 
+LIST_PACKAGES_QUERY = """
+MATCH (p:Package)
+RETURN p.purl AS purl, p.name AS name, p.version AS version
+ORDER BY p.name
+"""
+
+LIST_VULNERABILITIES_QUERY = """
+MATCH (v:VulnerabilityID)
+RETURN v.id AS id
+ORDER BY v.id
+"""
+
+LIST_REPOSITORIES_QUERY = """
+MATCH (r:Repository)
+RETURN r.url AS url, r.name AS name
+ORDER BY r.name
+"""
+
 
 def _serialize_value(value):
     if isinstance(value, list):
@@ -147,3 +165,15 @@ def expand_neighbors(driver: Driver, node_label: str, key_prop: str, key_value: 
             "type": record["rel_type"],
         })
     return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def list_packages(driver: Driver) -> list[dict]:
+    return _run(driver, LIST_PACKAGES_QUERY)
+
+
+def list_vulnerabilities(driver: Driver) -> list[dict]:
+    return _run(driver, LIST_VULNERABILITIES_QUERY)
+
+
+def list_repositories(driver: Driver) -> list[dict]:
+    return _run(driver, LIST_REPOSITORIES_QUERY)
