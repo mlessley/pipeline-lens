@@ -1,5 +1,6 @@
 .vscode/
 .worktrees/
+.claude/worktrees/
 *.db
 .env
 dev-up.sh
