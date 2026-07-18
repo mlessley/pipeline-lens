@@ -67,27 +67,35 @@ Each service in `docker-compose.yml` maps directly onto one stage of that flow:
 
 For demos (no live GitHub/AWS/Kubernetes needed), `scie.seed` populates the same database with a synthetic fleet (`generate_synthetic_fleet`) that exercises the identical data model and API/dashboard code paths as the real path above, just without going through RedPanda/Temporal/AWS/K8s.
 
-## Where This Goes Next
+## The Graph Layer (In Progress)
 
-The current model treats each pipeline run as a flat record — good enough to
-answer "what's running and is it healthy," but not yet built to answer deeper
-lineage questions like "if this specific vulnerability shows up in a scan,
-which commit introduced it, which services actually deploy that image, and
-is it exposed anywhere right now."
+The flat `pipeline_run` record above is good enough to answer "what's
+running and is it healthy," but not deeper lineage questions like "if this
+vulnerability shows up in a scan, which commit introduced it, which services
+deploy that image, and is it exposed anywhere right now." That's a graph
+problem more than a relational one — the relationships between commits,
+images, deployments, and findings matter as much as the records themselves.
 
-That's a graph problem more than a relational one — the relationships between
-commits, images, deployments, and findings matter as much as the records
-themselves. The next phase is moving the correlation layer onto a graph model
-(evaluating Neo4j) so those lineage questions become traversals instead of
-a growing pile of joins, and extending the ingested data sources beyond
-GitHub/ECR/K8s to include SAST and cloud security findings — turning this
-from "what's deployed" into "what's deployed, is it safe, and what's the
-blast radius if it's not."
+This is a separate, incremental layer being added alongside v1, not a
+rewrite of it: Neo4j, a hand-written Cypher query layer, and a "Graph
+Explorer" page in the dashboard that renders results as a graph you can
+click through — identifying labels instead of raw node types, attestation
+relationships shown as edge labels instead of extra clutter on the canvas.
+Most of the data behind it is still a synthetic fleet, same as v1's — one
+real repository (`mlessley/dast-bench`) has its actual GitHub Actions build
+history ingested too, as a first, small step toward confirming the schema
+holds up against real data and not just a generator.
 
-Full design for this phase — node/edge modeling (adapting GUAC's
-attestation-as-node pattern), SBOM/SARIF/provenance ingestion architecture,
-and the build-completeness correlation workflow — is written up in
-[`docs/phase2-graph-model.md`](docs/phase2-graph-model.md).
+What's not built yet: real SBOM/SARIF/provenance ingestion, a
+build-completeness correlation workflow, and moving the relational store
+off SQLite to Postgres as an ingestion ledger. That fuller design — node/edge
+modeling adapting GUAC's attestation-as-node pattern, the ingestion
+architecture, the completeness workflow — is written up in
+[`docs/phase2-graph-model.md`](docs/phase2-graph-model.md), but design
+docs are cheap and this part of the project is genuinely still evolving.
+To be clear, this whole repo is a personal project built to learn this
+architecture hands-on, not something running in production — this graph
+layer especially is the newest and roughest part of it.
 
 ## Running Locally
 
