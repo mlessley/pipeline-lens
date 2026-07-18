@@ -10,34 +10,50 @@ checking three or four different systems with no shared context between them.
 
 ## What Pipeline Lens Does
 
-Pipeline Lens is a working prototype that solves this by correlating events
-across the software delivery lifecycle into a single, queryable "pipeline run"
-record — from commit, through build and vulnerability scanning, to what's
-actually deployed and running. It's a fleet-wide view of software delivery
-health, built the way I'd approach it in production: event-driven ingestion,
-durable workflow orchestration, and a normalized data model that new sources
-can be added to without re-architecting the system.
+Pipeline Lens is a working prototype that demonstrates this by correlating
+events across the software delivery lifecycle into a single, queryable
+`pipeline_run` record — from commit, through build and vulnerability
+scanning, to what's actually deployed and running. It's a fleet-wide view
+across services, built using patterns I'd reach for in production — a
+webhook-driven entry point, durable workflow orchestration, a normalized
+data model new sources can be added to without re-architecting — while
+still being sized and scoped like the prototype it is. See
+[Known Limitations](#known-limitations) for where that shows.
 
-This isn't a dashboard bolted onto one tool's output — it's an independent
-correlation layer that pulls from multiple heterogeneous sources (CI/CD events,
-container scan results, live cluster state) and gives you one place to ask
-questions none of those tools can answer alone.
+It's not a dashboard wrapping one tool's own output — it pulls from three
+genuinely different APIs (GitHub's webhooks, AWS ECR's scan/image APIs, the
+Kubernetes API) into one place, which is the actual point: making "what's
+deployed, and is it safe" answerable without manually cross-referencing
+three systems by hand.
 
 ## Why This Architecture
 
-The design choices reflect how I'd build this for a real organization, not
-just a demo:
-
-- **Event-driven, not polling-based** — GitHub webhooks trigger the pipeline
-  in real time rather than periodic scraping
-- **Durable workflows (Temporal)** — a pipeline run might wait on a slow scan
-  or a deployment that takes minutes; Temporal makes that reliable without
-  custom retry/state logic
-- **Normalized schema** — GitHub, ECR scan results, and Kubernetes state all
-  land in one unified `pipeline_run` record, decoupled from any single
-  source's format
-- **Read/write separation** — the worker and bridge handle ingestion, the API
-  is a clean read layer the dashboard (or anything else) can consume
+- **Event-driven trigger, Temporal-managed polling downstream** — GitHub
+  webhooks start the pipeline in real time. Past that entry point, the ECR
+  scan wait and Kubernetes state check are Temporal activities retried on a
+  declared backoff policy — `wait_for_ecr_scan_activity` explicitly raises
+  until the scan status is `COMPLETE`, and Temporal's `RetryPolicy` is what
+  "waits." That's polling, orchestrated declaratively instead of hand-rolled
+  with a `sleep` loop, but still polling. There's no EventBridge/webhook
+  wiring for scan-complete or deployment-ready; that would be the fully
+  event-driven version.
+- **Durable workflow state, declared retries** — a pipeline run might wait
+  on a slow scan or a deployment that takes minutes. Temporal persists
+  workflow progress so a worker crash or restart doesn't lose it, without
+  us writing our own checkpointing. Retries themselves are still configured
+  by hand per activity (`RetryPolicy(maximum_attempts=..., backoff_coefficient=...)`)
+  — Temporal executes them, but someone still sets the policy.
+- **One typed schema across three different source APIs** — GitHub's
+  webhook JSON, ECR's `describe_image_scan_findings`/`describe_images`
+  responses, and Kubernetes' Deployment/Pod objects are three different
+  shapes. All three land in one `PipelineRun` model, with typed sub-models
+  and enums (`VulnerabilitySeverity`, `PipelineStatus`), that the status
+  logic, API, and dashboard all consume the same way — instead of every
+  downstream consumer handling three raw formats itself.
+- **No write path from the API to the datastore** — the FastAPI process
+  never writes a `pipeline_run` record directly; every write goes through
+  `write_pipeline_run_activity`, a Temporal activity the worker executes.
+  The API only reads.
 
 ## Architecture
 
@@ -66,6 +82,14 @@ Each service in `docker-compose.yml` maps directly onto one stage of that flow:
 * `redpanda`, `temporal` — the messaging and workflow-engine infrastructure; `postgres` is Temporal's own history store, not the app's data.
 
 For demos (no live GitHub/AWS/Kubernetes needed), `scie.seed` populates the same database with a synthetic fleet (`generate_synthetic_fleet`) that exercises the identical data model and API/dashboard code paths as the real path above, just without going through RedPanda/Temporal/AWS/K8s.
+
+## Known Limitations
+
+Things a production version of this would need that this prototype doesn't have:
+
+- **SQLite, one file, shared by the API and worker processes** (`docker-compose.yml`'s `scie-data` volume). Fine for a demo; not a real concurrent-write story. A production version needs Postgres — already the plan for the graph layer's ingestion ledger, see below.
+- **One worker container, no horizontal scale-out.** `docker-compose.yml` runs a single `worker` replica, so there's no load story for many pipeline runs in flight at once.
+- **A real gap found by reading the code, not a guess:** `bridge.py` commits its Kafka offset only after `start_workflow` succeeds, and the workflow ID is deterministic (`pipeline-run-{commit_sha}`) — so redelivery after a crash is *supposed* to be idempotent, since Temporal rejects a duplicate `start_workflow` call for an ID that's still running or already completed. But that rejection raises `WorkflowAlreadyStartedError`, and nothing in `bridge.py` catches it. A crash between the workflow starting and the offset committing crash-loops the bridge instead of recovering — capped at 5 restarts by `restart: on-failure:5` — and then needs a manual Kafka offset seek to unstick.
 
 ## The Graph Layer (In Progress)
 
