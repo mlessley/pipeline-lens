@@ -54,16 +54,17 @@ _ATTESTATION_EDGE_ROLES = {
 def node_display_label(node: dict) -> str:
     label = node["labels"][0]
     builder = _DISPLAY_LABEL_BUILDERS.get(label)
-    if builder is None:
+    identifying_value = builder(node["properties"]) if builder else None
+    if not identifying_value:
         return label
-    return builder(node["properties"]) or label
+    return f"{label}\n{identifying_value}"
 
 
 def _attestation_edge_label(node: dict) -> str:
     label = node["labels"][0]
     if label == "VexStatement":
-        return f'CertifyVuln ({node["properties"].get("status", "?")})'
-    return "DependsOn"
+        return f'Certify Vuln ({node["properties"].get("status", "?")})'
+    return "Depends On"
 
 
 def collapse_attestations(nodes: list[dict], edges: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -99,6 +100,16 @@ def collapse_attestations(nodes: list[dict], edges: list[dict]) -> tuple[list[di
     return kept_nodes, kept_edges
 
 
+def _humanize_edge_type(raw_type: str) -> str:
+    """Convert a SCREAMING_SNAKE_CASE Neo4j relationship type (HAS_BUILD,
+    PRODUCED) into Title Case with spaces for display. Strings that already
+    read as human-readable text — the labels _attestation_edge_label
+    produces — pass through unchanged."""
+    if "_" not in raw_type and not raw_type.isupper():
+        return raw_type
+    return raw_type.replace("_", " ").title()
+
+
 def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node], list[Edge]]:
     agraph_nodes = []
     for node in nodes:
@@ -115,7 +126,7 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
         agraph_node.title = ""
         agraph_nodes.append(agraph_node)
     agraph_edges = [
-        Edge(source=edge["source"], target=edge["target"], label=edge["type"])
+        Edge(source=edge["source"], target=edge["target"], label=_humanize_edge_type(edge["type"]))
         for edge in edges
     ]
     return agraph_nodes, agraph_edges
