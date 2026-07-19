@@ -54,6 +54,8 @@ def _run_query_and_rerun(path: str, view_kind: str) -> None:
     st.rerun()
 
 
+show_edge_labels = st.sidebar.checkbox("Show edge labels", value=True)
+
 mode = st.selectbox("Search by", ["Vulnerability ID", "Package PURL", "Repository URL"])
 
 if mode == "Vulnerability ID":
@@ -95,7 +97,7 @@ if st.session_state.graph_nodes:
             list(st.session_state.graph_nodes.values()),
             list(st.session_state.graph_edges.values()),
         )
-        agraph_nodes, agraph_edges = to_agraph_elements(nodes, edges)
+        agraph_nodes, agraph_edges = to_agraph_elements(nodes, edges, show_edge_labels)
         config = Config(
             width=1000, height=800, directed=True,
             hierarchical=True, direction="LR", physics=False,

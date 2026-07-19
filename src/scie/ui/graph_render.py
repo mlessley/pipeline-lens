@@ -142,7 +142,9 @@ def _humanize_edge_type(raw_type: str) -> str:
     return raw_type.replace("_", " ").title()
 
 
-def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node], list[Edge]]:
+def to_agraph_elements(
+    nodes: list[dict], edges: list[dict], show_edge_labels: bool = True,
+) -> tuple[list[Node], list[Edge]]:
     agraph_nodes = []
     for node in nodes:
         label = node["labels"][0]
@@ -163,7 +165,7 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
         Edge(
             source=edge["source"],
             target=edge["target"],
-            label=_humanize_edge_type(edge["type"]),
+            label=_humanize_edge_type(edge["type"]) if show_edge_labels else "",
             font=EDGE_FONT,
         )
         for edge in edges

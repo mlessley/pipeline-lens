@@ -124,3 +124,12 @@ def test_to_agraph_elements_leaves_already_human_readable_edge_types_unchanged()
     _, agraph_edges = to_agraph_elements(nodes, edges)
 
     assert agraph_edges[0].label == "Depends On"
+
+
+def test_to_agraph_elements_clears_edge_labels_when_show_edge_labels_is_false():
+    nodes = [_node("r1", "Repository", url="x", name="x"), _node("b1", "Build", id="build-0001")]
+    edges = [{"source": "r1", "target": "b1", "type": "HAS_BUILD"}]
+
+    _, agraph_edges = to_agraph_elements(nodes, edges, show_edge_labels=False)
+
+    assert agraph_edges[0].label == ""
