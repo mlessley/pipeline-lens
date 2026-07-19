@@ -79,8 +79,9 @@ def test_to_agraph_elements_builds_nodes_with_empty_title_and_display_label():
         "face": "monospace",
         "size": 13,
         "align": "left",
+        "vadjust": 3,
         "multi": "markdown",
-        "mono": {"face": "monospace", "size": 8, "color": "#000000"},
+        "mono": {"face": "monospace", "size": 8, "color": "#000000", "vadjust": -6},
     }
     assert agraph_nodes[0].margin == 8
     assert len(agraph_edges) == 1

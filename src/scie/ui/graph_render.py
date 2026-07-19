@@ -61,13 +61,17 @@ _ATTESTATION_EDGE_ROLES = {
 # whole label block, not per-line — vis-network has no way to pin one
 # segment to a corner independent of the rest of the label — but since the
 # type badge is line 1, left-aligning the block reads as the badge sitting
-# in the top-left rather than dead-center.
+# in the top-left rather than dead-center. vadjust (px, positive = down)
+# nudges each segment vertically within the block: the mono/type segment
+# shifts up toward the box's top border, the base/value segment shifts down
+# slightly off dead-center.
 NODE_FONT = {
     "face": "monospace",
     "size": 13,
     "align": "left",
+    "vadjust": 3,
     "multi": "markdown",
-    "mono": {"face": "monospace", "size": 8, "color": "#000000"},
+    "mono": {"face": "monospace", "size": 8, "color": "#000000", "vadjust": -6},
 }
 
 # margin: default is 5px — bumped up so label text doesn't crowd the box
