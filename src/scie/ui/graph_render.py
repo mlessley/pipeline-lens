@@ -53,14 +53,23 @@ _ATTESTATION_EDGE_ROLES = {
 
 # vis-network markdown multi-font: font.multi="markdown" lets a label mix a
 # default-styled segment with a `backtick-wrapped` segment rendered using
-# font.mono. Used to make the type-badge line subtler (smaller, gray) than
+# font.mono. Used to make the type-badge line subtler (smaller, black) than
 # the identifying-value line beneath it, both in the same monospace face.
+# Black (not gray) for the mono segment — gray had too little contrast
+# against our darker node colors (e.g. Commit's #C44E52, Repository's
+# #4C72B0).
 NODE_FONT = {
     "face": "monospace",
-    "size": 14,
+    "size": 12,
     "multi": "markdown",
-    "mono": {"face": "monospace", "size": 10, "color": "#888888"},
+    "mono": {"face": "monospace", "size": 10, "color": "#000000"},
 }
+
+# margin: default is 5px — bumped up so label text doesn't crowd the box
+# walls. Only applies to box/circle/database/icon/text shapes per vis-network
+# docs; our VulnerabilityID diamonds don't get it, which is fine since that's
+# a single-line label with less crowding risk to begin with.
+NODE_MARGIN = 8
 
 EDGE_FONT = {"face": "monospace", "size": 10, "color": "#666666"}
 
@@ -134,6 +143,7 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
             color=NODE_COLORS.get(label, "#999999"),
             shape=SHAPE_BY_LABEL.get(label, "box"),
             font=NODE_FONT,
+            margin=NODE_MARGIN,
         )
         # streamlit_agraph defaults title to id and opens it via window.open()
         # on double-click; Node(title=...) falls back to id for any falsy

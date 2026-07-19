@@ -77,10 +77,11 @@ def test_to_agraph_elements_builds_nodes_with_empty_title_and_display_label():
     assert agraph_nodes[0].shape == "box"
     assert agraph_nodes[0].font == {
         "face": "monospace",
-        "size": 14,
+        "size": 12,
         "multi": "markdown",
-        "mono": {"face": "monospace", "size": 10, "color": "#888888"},
+        "mono": {"face": "monospace", "size": 10, "color": "#000000"},
     }
+    assert agraph_nodes[0].margin == 8
     assert len(agraph_edges) == 1
     assert agraph_edges[0].source == "p1"
     assert agraph_edges[0].to == "p1"
