@@ -10,6 +10,21 @@ NODE_COLORS = {
     "Deployment": "#8C8C8C",
 }
 
+# vis-network node shapes (streamlit_agraph passes this straight through with
+# no validation — confirmed by inspecting the built frontend bundle). Every
+# type is a rectangle sized to its label text except VulnerabilityID, which
+# gets a diamond so CVEs visually stand out as the "risk" node type rather
+# than blending in as just another colored box.
+SHAPE_BY_LABEL = {
+    "Repository": "box",
+    "Build": "box",
+    "Commit": "box",
+    "Artifact": "box",
+    "Package": "box",
+    "VulnerabilityID": "diamond",
+    "Deployment": "box",
+}
+
 # Canvas display text only — distinct from queries.py callers' notion of a
 # unique lookup key (see KEY_PROP_BY_LABEL in 1_Graph_Explorer.py, and the
 # fe429d8 fix that removed Deployment.cluster from that dict for not being
@@ -92,6 +107,7 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
             id=node["element_id"],
             label=node_display_label(node),
             color=NODE_COLORS.get(label, "#999999"),
+            shape=SHAPE_BY_LABEL.get(label, "box"),
         )
         # streamlit_agraph defaults title to id and opens it via window.open()
         # on double-click; Node(title=...) falls back to id for any falsy

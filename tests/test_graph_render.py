@@ -74,7 +74,16 @@ def test_to_agraph_elements_builds_nodes_with_empty_title_and_display_label():
     assert agraph_nodes[0].label == "openssl@1.0.0"
     assert agraph_nodes[0].title == ""
     assert agraph_nodes[0].color == "#CCB974"
+    assert agraph_nodes[0].shape == "box"
     assert len(agraph_edges) == 1
     assert agraph_edges[0].source == "p1"
     assert agraph_edges[0].to == "p1"
     assert agraph_edges[0].label == "self"
+
+
+def test_to_agraph_elements_gives_vulnerability_nodes_a_diamond_shape():
+    nodes = [_node("v1", "VulnerabilityID", id="CVE-2014-0160")]
+
+    agraph_nodes, _ = to_agraph_elements(nodes, [])
+
+    assert agraph_nodes[0].shape == "diamond"
