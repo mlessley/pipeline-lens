@@ -91,11 +91,18 @@ def ingest_repository(
             _ingest_run(session, repo_data["html_url"], run)
 
 
+REPOS: list[tuple[str, str]] = [
+    ("mlessley", "dast-bench"),
+    ("mlessley", "pipeline-lens"),
+]
+
+
 def main() -> None:
     driver = get_driver()
     token = os.environ.get("GITHUB_TOKEN")
-    ingest_repository(driver, "mlessley", "dast-bench", token=token)
-    print("Ingested GitHub Actions build history for mlessley/dast-bench.")
+    for owner, repo in REPOS:
+        ingest_repository(driver, owner, repo, token=token)
+        print(f"Ingested GitHub Actions build history for {owner}/{repo}.")
 
 
 if __name__ == "__main__":
