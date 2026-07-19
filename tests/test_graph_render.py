@@ -6,13 +6,13 @@ def _node(element_id, label, **props):
 
 
 def test_node_display_label_uses_identifying_property_per_label():
-    assert node_display_label(_node("r1", "Repository", url="https://x/y", name="y")) == "Repository\ny"
-    assert node_display_label(_node("b1", "Build", id="build-0001")) == "Build\nbuild-0001"
-    assert node_display_label(_node("c1", "Commit", sha="abcdef1234567890")) == "Commit\nabcdef1"
-    assert node_display_label(_node("a1", "Artifact", digest="sha256:x", name="svc")) == "Artifact\nsvc"
-    assert node_display_label(_node("p1", "Package", name="openssl", version="1.0.0")) == "Package\nopenssl@1.0.0"
-    assert node_display_label(_node("v1", "VulnerabilityID", id="CVE-2014-0160")) == "VulnerabilityID\nCVE-2014-0160"
-    assert node_display_label(_node("d1", "Deployment", cluster="scie", namespace="prod")) == "Deployment\nscie/prod"
+    assert node_display_label(_node("r1", "Repository", url="https://x/y", name="y")) == "`Repository`\ny"
+    assert node_display_label(_node("b1", "Build", id="build-0001")) == "`Build`\nbuild-0001"
+    assert node_display_label(_node("c1", "Commit", sha="abcdef1234567890")) == "`Commit`\nabcdef1"
+    assert node_display_label(_node("a1", "Artifact", digest="sha256:x", name="svc")) == "`Artifact`\nsvc"
+    assert node_display_label(_node("p1", "Package", name="openssl", version="1.0.0")) == "`Package`\nopenssl@1.0.0"
+    assert node_display_label(_node("v1", "VulnerabilityID", id="CVE-2014-0160")) == "`VulnerabilityID`\nCVE-2014-0160"
+    assert node_display_label(_node("d1", "Deployment", cluster="scie", namespace="prod")) == "`Deployment`\nscie/prod"
 
 
 def test_node_display_label_falls_back_to_label_for_unknown_type():
@@ -71,14 +71,21 @@ def test_to_agraph_elements_builds_nodes_with_empty_title_and_display_label():
 
     assert len(agraph_nodes) == 1
     assert agraph_nodes[0].id == "p1"
-    assert agraph_nodes[0].label == "Package\nopenssl@1.0.0"
+    assert agraph_nodes[0].label == "`Package`\nopenssl@1.0.0"
     assert agraph_nodes[0].title == ""
     assert agraph_nodes[0].color == "#CCB974"
     assert agraph_nodes[0].shape == "box"
+    assert agraph_nodes[0].font == {
+        "face": "monospace",
+        "size": 14,
+        "multi": "markdown",
+        "mono": {"face": "monospace", "size": 10, "color": "#888888"},
+    }
     assert len(agraph_edges) == 1
     assert agraph_edges[0].source == "p1"
     assert agraph_edges[0].to == "p1"
     assert agraph_edges[0].label == "self"
+    assert agraph_edges[0].font == {"face": "monospace", "size": 10, "color": "#666666"}
 
 
 def test_to_agraph_elements_gives_vulnerability_nodes_a_diamond_shape():

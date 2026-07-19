@@ -51,13 +51,27 @@ _ATTESTATION_EDGE_ROLES = {
 }
 
 
+# vis-network markdown multi-font: font.multi="markdown" lets a label mix a
+# default-styled segment with a `backtick-wrapped` segment rendered using
+# font.mono. Used to make the type-badge line subtler (smaller, gray) than
+# the identifying-value line beneath it, both in the same monospace face.
+NODE_FONT = {
+    "face": "monospace",
+    "size": 14,
+    "multi": "markdown",
+    "mono": {"face": "monospace", "size": 10, "color": "#888888"},
+}
+
+EDGE_FONT = {"face": "monospace", "size": 10, "color": "#666666"}
+
+
 def node_display_label(node: dict) -> str:
     label = node["labels"][0]
     builder = _DISPLAY_LABEL_BUILDERS.get(label)
     identifying_value = builder(node["properties"]) if builder else None
     if not identifying_value:
         return label
-    return f"{label}\n{identifying_value}"
+    return f"`{label}`\n{identifying_value}"
 
 
 def _attestation_edge_label(node: dict) -> str:
@@ -119,6 +133,7 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
             label=node_display_label(node),
             color=NODE_COLORS.get(label, "#999999"),
             shape=SHAPE_BY_LABEL.get(label, "box"),
+            font=NODE_FONT,
         )
         # streamlit_agraph defaults title to id and opens it via window.open()
         # on double-click; Node(title=...) falls back to id for any falsy
@@ -126,7 +141,12 @@ def to_agraph_elements(nodes: list[dict], edges: list[dict]) -> tuple[list[Node]
         agraph_node.title = ""
         agraph_nodes.append(agraph_node)
     agraph_edges = [
-        Edge(source=edge["source"], target=edge["target"], label=_humanize_edge_type(edge["type"]))
+        Edge(
+            source=edge["source"],
+            target=edge["target"],
+            label=_humanize_edge_type(edge["type"]),
+            font=EDGE_FONT,
+        )
         for edge in edges
     ]
     return agraph_nodes, agraph_edges
