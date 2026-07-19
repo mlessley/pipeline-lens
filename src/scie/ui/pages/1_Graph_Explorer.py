@@ -97,9 +97,17 @@ if st.session_state.graph_nodes:
         )
         agraph_nodes, agraph_edges = to_agraph_elements(nodes, edges)
         config = Config(
-            width=1000, height=600, directed=True,
+            width=1000, height=800, directed=True,
             hierarchical=True, direction="LR", physics=False,
         )
+        # Config's constructor always appends "px" to width/height, so a
+        # percentage has to be set directly on the attribute afterward,
+        # bypassing that formatting (same pattern as the Node.title override
+        # elsewhere in this file). vis-network itself accepts any valid CSS
+        # size string here — confirmed by inspecting the frontend bundle,
+        # which parses our config JSON and hands it to vis-network as-is
+        # with no validation.
+        config.width = "100%"
         clicked_id = agraph(nodes=agraph_nodes, edges=agraph_edges, config=config)
 
         if clicked_id and clicked_id in st.session_state.graph_nodes:
