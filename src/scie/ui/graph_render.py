@@ -57,12 +57,17 @@ _ATTESTATION_EDGE_ROLES = {
 # the identifying-value line beneath it, both in the same monospace face.
 # Black (not gray) for the mono segment — gray had too little contrast
 # against our darker node colors (e.g. Commit's #C44E52, Repository's
-# #4C72B0).
+# #4C72B0). align: "left" (vis-network default is "center") applies to the
+# whole label block, not per-line — vis-network has no way to pin one
+# segment to a corner independent of the rest of the label — but since the
+# type badge is line 1, left-aligning the block reads as the badge sitting
+# in the top-left rather than dead-center.
 NODE_FONT = {
     "face": "monospace",
-    "size": 12,
+    "size": 13,
+    "align": "left",
     "multi": "markdown",
-    "mono": {"face": "monospace", "size": 10, "color": "#000000"},
+    "mono": {"face": "monospace", "size": 8, "color": "#000000"},
 }
 
 # margin: default is 5px — bumped up so label text doesn't crowd the box
