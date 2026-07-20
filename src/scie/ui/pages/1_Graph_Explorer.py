@@ -92,6 +92,9 @@ if st.session_state.graph_nodes:
             list(st.session_state.graph_edges.values()),
         )
         st.dataframe(rows, use_container_width=True)
+        if st.button("Show as graph"):
+            st.session_state.view_kind = "graph"
+            st.rerun()
     else:
         nodes, edges = collapse_attestations(
             list(st.session_state.graph_nodes.values()),
