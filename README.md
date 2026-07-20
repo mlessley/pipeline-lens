@@ -14,17 +14,15 @@ Pipeline Lens is a working prototype that demonstrates this by correlating
 events across the software delivery lifecycle into a single, queryable
 `pipeline_run` record — from commit, through build and vulnerability
 scanning, to what's actually deployed and running. It's a fleet-wide view
-across services, built using patterns I'd reach for in production — a
-webhook-driven entry point, durable workflow orchestration, a normalized
-data model new sources can be added to without re-architecting — while
-still being sized and scoped like the prototype it is. See
-[Known Limitations](#known-limitations) for where that shows.
+across services: a webhook-driven entry point, durable workflow
+orchestration, a normalized data model new sources can be added to without
+re-architecting. See [Known Limitations](#known-limitations) for where the
+prototype-scale tradeoffs show.
 
-It's not a dashboard wrapping one tool's own output — it pulls from three
-genuinely different APIs (GitHub's webhooks, AWS ECR's scan/image APIs, the
-Kubernetes API) into one place, which is the actual point: making "what's
-deployed, and is it safe" answerable without manually cross-referencing
-three systems by hand.
+It pulls from three genuinely different APIs (GitHub's webhooks, AWS ECR's
+scan/image APIs, the Kubernetes API) into one place, which is the actual
+point: making "what's deployed, and is it safe" answerable without manually
+cross-referencing three systems by hand.
 
 ## Why This Architecture
 
@@ -117,14 +115,16 @@ in the story, not a finished one.
 
 What's not built yet: real SBOM/SARIF/provenance ingestion, a
 build-completeness correlation workflow, and moving the relational store
-off SQLite to Postgres as an ingestion ledger. That fuller design — node/edge
-modeling adapting GUAC's attestation-as-node pattern, the ingestion
-architecture, the completeness workflow — is written up in
-[`docs/phase2-graph-model.md`](docs/phase2-graph-model.md), but design
-docs are cheap and this part of the project is genuinely still evolving.
-To be clear, this whole repo is a personal project built to learn this
-architecture hands-on, not something running in production — this graph
-layer especially is the newest and roughest part of it.
+off SQLite to Postgres as an ingestion ledger.
+[`docs/phase2-graph-model.md`](docs/phase2-graph-model.md) sketches a
+heavier version of this (a Temporal workflow watching OCI registries, a
+dedicated `Builder` node, the completeness workflow) written before any of
+it existed — in practice every real decision since has gone the other way,
+toward small pull-based scripts instead, so treat that doc as an early
+brainstorm rather than the actual plan. To be clear, this whole repo is a
+personal project built to learn this architecture hands-on, not something
+running in production — this graph layer especially is the newest and
+roughest part of it.
 
 ## Running Locally
 
