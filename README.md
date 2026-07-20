@@ -105,10 +105,15 @@ rewrite of it: Neo4j, a hand-written Cypher query layer, and a "Graph
 Explorer" page in the dashboard that renders results as a graph you can
 click through — identifying labels instead of raw node types, attestation
 relationships shown as edge labels instead of extra clutter on the canvas.
-Most of the data behind it is still a synthetic fleet, same as v1's — one
-real repository (`mlessley/dast-bench`) has its actual GitHub Actions build
-history ingested too, as a first, small step toward confirming the schema
-holds up against real data and not just a generator.
+Most of the data behind it is still a synthetic fleet, same as v1's — but
+two real repositories (`dast-bench` and this repo itself) have their actual
+GitHub Actions build history ingested, plus their real direct dependencies
+parsed straight from each repo's `uv.lock` — not a scanner, just the same
+lockfile `uv` already resolved. That's a step past "does the schema hold up
+against real data" into "does it hold up against data this project didn't
+generate for itself." Still no real vulnerability data for those
+dependencies — no CVE or VEX status attached to them yet, that's a real gap
+in the story, not a finished one.
 
 What's not built yet: real SBOM/SARIF/provenance ingestion, a
 build-completeness correlation workflow, and moving the relational store
@@ -127,12 +132,16 @@ layer especially is the newest and roughest part of it.
 docker compose up -d
 docker compose exec api uv run python -m scie.seed
 docker compose exec api uv run python -m scie.graph.seed
+docker compose exec api uv run python -m scie.graph.github_ingest
 ```
 
-Then open the dashboard at `http://localhost:8501` (API at `http://localhost:8000`) — the
-"Graph Explorer" page is in the sidebar. Neo4j Browser is available directly at
-`http://localhost:7474` (user `neo4j`, password `devpassword`) for sanity-checking the
-seeded graph.
+The last command pulls real data (no `GITHUB_TOKEN` needed — both source
+repos are public; set one in the `api` container's environment if you hit
+GitHub's unauthenticated rate limit). Then open the dashboard at
+`http://localhost:8501` (API at `http://localhost:8000`) — the "Graph
+Explorer" page is in the sidebar. Neo4j Browser is available directly at
+`http://localhost:7474` (user `neo4j`, password `devpassword`) for
+sanity-checking the seeded graph.
 
 ## Tests
 
