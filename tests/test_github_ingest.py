@@ -175,3 +175,78 @@ def test_ingest_repository_respects_limit(monkeypatch):
 
     build_calls = [c for c in driver.fake_session.calls if "MERGE (b:Build" in c[0]]
     assert len(build_calls) == 2
+
+
+def test_fetch_file_content_decodes_base64_response(monkeypatch):
+    captured = {}
+
+    def fake_get(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        return FakeResponse({"content": "aGVsbG8="})  # base64 for "hello"
+
+    monkeypatch.setattr(github_ingest.requests, "get", fake_get)
+
+    result = github_ingest.fetch_file_content("mlessley", "pipeline-lens", "uv.lock", None)
+
+    assert captured["url"] == "https://api.github.com/repos/mlessley/pipeline-lens/contents/uv.lock"
+    assert "Authorization" not in captured["headers"]
+    assert result == b"hello"
+
+
+def test_parse_direct_dependencies_resolves_names_to_versions():
+    uv_lock_content = b"""
+[[package]]
+name = "scie"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "streamlit" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.139.0"
+
+[[package]]
+name = "streamlit"
+version = "1.58.0"
+"""
+
+    result = github_ingest.parse_direct_dependencies(uv_lock_content)
+
+    assert set(result) == {("fastapi", "0.139.0"), ("streamlit", "1.58.0")}
+
+
+def test_parse_direct_dependencies_returns_empty_list_without_editable_entry():
+    uv_lock_content = b"""
+[[package]]
+name = "fastapi"
+version = "0.139.0"
+"""
+
+    result = github_ingest.parse_direct_dependencies(uv_lock_content)
+
+    assert result == []
+
+
+def test_parse_direct_dependencies_skips_names_with_no_resolved_version():
+    uv_lock_content = b"""
+[[package]]
+name = "scie"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "missing-package" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.139.0"
+"""
+
+    result = github_ingest.parse_direct_dependencies(uv_lock_content)
+
+    assert result == [("fastapi", "0.139.0")]

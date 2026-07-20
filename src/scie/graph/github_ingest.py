@@ -1,4 +1,6 @@
+import base64
 import os
+import tomllib
 
 import requests
 from neo4j import Driver
@@ -33,6 +35,32 @@ def _fetch_repository(owner: str, repo: str, token: str | None) -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def fetch_file_content(owner: str, repo: str, path: str, token: str | None) -> bytes:
+    response = requests.get(
+        f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{path}",
+        headers=_github_headers(token),
+        timeout=10,
+    )
+    response.raise_for_status()
+    return base64.b64decode(response.json()["content"])
+
+
+def parse_direct_dependencies(uv_lock_content: bytes) -> list[tuple[str, str]]:
+    data = tomllib.loads(uv_lock_content.decode("utf-8"))
+    packages = data.get("package", [])
+    versions_by_name = {pkg["name"]: pkg["version"] for pkg in packages}
+    own_entry = next(
+        (pkg for pkg in packages if pkg.get("source", {}).get("editable") == "."),
+        None,
+    )
+    if own_entry is None:
+        return []
+    direct_names = [dep["name"] for dep in own_entry.get("dependencies", [])]
+    return [
+        (name, versions_by_name[name]) for name in direct_names if name in versions_by_name
+    ]
 
 
 def _commit_author_and_timestamp(run: dict) -> tuple[str, str]:
