@@ -54,6 +54,8 @@ def _run_query_and_rerun(path: str, view_kind: str) -> None:
     st.rerun()
 
 
+show_edge_labels = st.sidebar.checkbox("Show edge labels", value=True)
+
 mode = st.selectbox("Search by", ["Vulnerability ID", "Package PURL", "Repository URL"])
 
 if mode == "Vulnerability ID":
@@ -90,16 +92,27 @@ if st.session_state.graph_nodes:
             list(st.session_state.graph_edges.values()),
         )
         st.dataframe(rows, use_container_width=True)
+        if st.button("Show as graph"):
+            st.session_state.view_kind = "graph"
+            st.rerun()
     else:
         nodes, edges = collapse_attestations(
             list(st.session_state.graph_nodes.values()),
             list(st.session_state.graph_edges.values()),
         )
-        agraph_nodes, agraph_edges = to_agraph_elements(nodes, edges)
+        agraph_nodes, agraph_edges = to_agraph_elements(nodes, edges, show_edge_labels)
         config = Config(
-            width=1000, height=600, directed=True,
+            width=1000, height=800, directed=True,
             hierarchical=True, direction="LR", physics=False,
         )
+        # Config's constructor always appends "px" to width/height, so a
+        # percentage has to be set directly on the attribute afterward,
+        # bypassing that formatting (same pattern as the Node.title override
+        # elsewhere in this file). vis-network itself accepts any valid CSS
+        # size string here — confirmed by inspecting the frontend bundle,
+        # which parses our config JSON and hands it to vis-network as-is
+        # with no validation.
+        config.width = "100%"
         clicked_id = agraph(nodes=agraph_nodes, edges=agraph_edges, config=config)
 
         if clicked_id and clicked_id in st.session_state.graph_nodes:
