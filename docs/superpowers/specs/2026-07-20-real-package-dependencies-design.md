@@ -8,8 +8,18 @@ Every `Package`/`IsDependency` node in the graph today is synthetic
 data but zero package-level data — there's nothing to find via Package
 PURL search, `package_usage`, or `vuln_blast_radius`/`vuln_origin_trace`
 for either real repo. This adds real `Package` and `IsDependency` data by
-parsing each repo's actual `uv.lock` and `pyproject.toml`, scoped to
-direct dependencies only (not the full transitive closure).
+parsing each repo's actual `uv.lock`, scoped to direct dependencies only
+(not the full transitive closure).
+
+Confirmed on both real repos before writing this: `uv.lock` alone is
+sufficient — no need to also fetch `pyproject.toml`. Every `uv`-managed
+project's own lockfile contains a `[[package]]` entry for the project
+itself, identifiable by `source = { editable = "." }` regardless of what
+the project is named (pipeline-lens's is `scie`, dast-bench's is
+`dast-bench-core`). That entry's `dependencies` list is already clean
+`{name = "..."}` pairs — no version specifiers or extras to strip, and no
+cross-file name-matching/normalization needed, since every name comes from
+the same lockfile uv itself generated.
 
 ## 2. Scope
 
@@ -17,16 +27,15 @@ direct dependencies only (not the full transitive closure).
 - Extends `src/scie/graph/github_ingest.py` (same file — same data
   source and `REPOS` list as the existing Build/Commit ingestion), not a
   new module.
-- For each repo in `REPOS`: fetch `pyproject.toml` and `uv.lock` via
-  GitHub's Contents API (not local disk, even for `pipeline-lens` itself —
-  keeps the data source uniform: "the real committed file on GitHub" for
-  every repo, no self-referential special case).
-- Parse `pyproject.toml`'s `[project.dependencies]` with `tomllib`
-  (stdlib, no new dependency) to get the repo's *direct* dependency names
-  only — strip version specifiers and extras (`"uvicorn[standard]>=0.50.0"`
-  → `uvicorn`).
-- Parse `uv.lock`'s `[[package]]` entries with `tomllib` to resolve each
-  direct dependency name to its locked version.
+- For each repo in `REPOS`: fetch `uv.lock` via GitHub's Contents API (not
+  local disk, even for `pipeline-lens` itself — keeps the data source
+  uniform: "the real committed file on GitHub" for every repo, no
+  self-referential special case).
+- Parse it with `tomllib` (stdlib, no new dependency): find the
+  `[[package]]` entry whose `source.editable == "."`, take its
+  `dependencies` list as the direct dependency names, then resolve each
+  name's version from that same file's other `[[package]]` entries
+  (`name` → `version`).
 - One `Artifact` node per repo: `digest` = `"sha256:" + sha256(...).hexdigest()`
   of the *decoded* `uv.lock` file content (the raw file bytes, not the
   base64 string GitHub's Contents API wraps it in) — reproducible and
@@ -50,19 +59,17 @@ direct dependencies only (not the full transitive closure).
 - Real vulnerability data for these packages (no CVE/VEX status) — this is
   "what does this repo depend on," not "is it vulnerable." That's the
   separately-discussed, larger CodeQL-alerts idea.
-- Any repo whose `pyproject.toml` doesn't use PEP 621's
-  `[project.dependencies]` format (e.g. old-style Poetry) — if a repo's
-  `pyproject.toml` doesn't have that section, it simply yields zero direct
-  dependencies for that repo, not an error. Not worth handling other
-  formats for two repos that both already use PEP 621 via `uv`.
+- Any repo not managed by `uv` (no `uv.lock`, so no `source.editable == "."`
+  entry to find) — yields zero direct dependencies for that repo, not an
+  error. Both real repos in `REPOS` use `uv` today.
 
 ## 3. Testing
 
 Same bar as the rest of `github_ingest.py`: mocked-HTTP tests for the new
-fetch/parse functions (canned `pyproject.toml`/`uv.lock` TOML content),
-mocked-driver tests for the new Cypher writes, following the exact
-existing test patterns in `tests/test_github_ingest.py`. No live GitHub or
-Neo4j required for `pytest`.
+fetch/parse function (canned `uv.lock` TOML content), mocked-driver tests
+for the new Cypher writes, following the exact existing test patterns in
+`tests/test_github_ingest.py`. No live GitHub or Neo4j required for
+`pytest`.
 
 ## 4. Verification
 
