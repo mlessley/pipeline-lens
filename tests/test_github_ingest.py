@@ -1,3 +1,5 @@
+import hashlib
+
 from graph_fakes import FakeDriver
 
 from scie.graph import github_ingest
@@ -250,3 +252,70 @@ version = "0.139.0"
     result = github_ingest.parse_direct_dependencies(uv_lock_content)
 
     assert result == [("fastapi", "0.139.0")]
+
+
+def test_ingest_dependencies_writes_artifact_and_packages(monkeypatch):
+    driver = FakeDriver()
+    driver.fake_session.set_result(
+        """
+        MATCH (r:Repository {url: $repo_url})-[:HAS_BUILD]->(b:Build)
+        RETURN b.id AS id
+        ORDER BY b.startTime DESC
+        LIMIT 1
+        """,
+        [{"id": "29694298639"}],
+    )
+    monkeypatch.setattr(
+        github_ingest, "fetch_file_content", lambda owner, repo, path, token: b"fake-uv-lock-bytes",
+    )
+    monkeypatch.setattr(
+        github_ingest, "parse_direct_dependencies",
+        lambda content: [("fastapi", "0.139.0"), ("streamlit", "1.58.0")],
+    )
+
+    github_ingest.ingest_dependencies(driver, "mlessley", "pipeline-lens")
+
+    calls = driver.fake_session.calls
+    expected_digest = "sha256:" + hashlib.sha256(b"fake-uv-lock-bytes").hexdigest()
+
+    artifact_call = next(c for c in calls if "MERGE (a:Artifact" in c[0])
+    assert artifact_call[1] == {
+        "build_id": "29694298639",
+        "digest": expected_digest,
+        "name": "pipeline-lens-dependencies",
+    }
+
+    package_calls = [c for c in calls if "MERGE (p:Package" in c[0]]
+    assert len(package_calls) == 2
+    assert {c[1]["purl"] for c in package_calls} == {
+        "pkg:pypi/fastapi@0.139.0", "pkg:pypi/streamlit@1.58.0",
+    }
+
+
+def test_ingest_dependencies_does_nothing_when_no_dependencies_found(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(
+        github_ingest, "fetch_file_content", lambda owner, repo, path, token: b"fake-uv-lock-bytes",
+    )
+    monkeypatch.setattr(github_ingest, "parse_direct_dependencies", lambda content: [])
+
+    github_ingest.ingest_dependencies(driver, "mlessley", "pipeline-lens")
+
+    assert driver.fake_session.calls == []
+
+
+def test_ingest_dependencies_does_nothing_when_repo_has_no_build(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(
+        github_ingest, "fetch_file_content", lambda owner, repo, path, token: b"fake-uv-lock-bytes",
+    )
+    monkeypatch.setattr(
+        github_ingest, "parse_direct_dependencies", lambda content: [("fastapi", "0.139.0")],
+    )
+    # No set_result() call for the build-lookup query -> FakeSession.run
+    # returns [] for it by default, simulating "no Build found yet".
+
+    github_ingest.ingest_dependencies(driver, "mlessley", "pipeline-lens")
+
+    artifact_calls = [c for c in driver.fake_session.calls if "MERGE (a:Artifact" in c[0]]
+    assert artifact_calls == []

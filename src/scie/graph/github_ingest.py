@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import os
 import tomllib
 
@@ -119,6 +120,63 @@ def ingest_repository(
             _ingest_run(session, repo_data["html_url"], run)
 
 
+def _write_dependencies(
+    session, build_id: str, repo_name: str, uv_lock_content: bytes, dependencies: list[tuple[str, str]],
+) -> None:
+    digest = "sha256:" + hashlib.sha256(uv_lock_content).hexdigest()
+
+    session.run(
+        """
+        MATCH (b:Build {id: $build_id})
+        MERGE (a:Artifact {digest: $digest})
+        SET a.name = $name
+        MERGE (b)-[:PRODUCED]->(a)
+        """,
+        build_id=build_id,
+        digest=digest,
+        name=f"{repo_name}-dependencies",
+    )
+    for name, version in dependencies:
+        session.run(
+            """
+            MATCH (a:Artifact {digest: $digest})
+            MERGE (p:Package {purl: $purl})
+            SET p.name = $name, p.version = $version
+            CREATE (dep:IsDependency {origin: 'uv.lock'})
+            CREATE (dep)-[:subject]->(a)
+            CREATE (dep)-[:dependency]->(p)
+            """,
+            digest=digest,
+            purl=f"pkg:pypi/{name}@{version}",
+            name=name,
+            version=version,
+        )
+
+
+def ingest_dependencies(
+    driver: Driver, owner: str, repo: str, token: str | None = None,
+) -> None:
+    uv_lock_content = fetch_file_content(owner, repo, "uv.lock", token)
+    dependencies = parse_direct_dependencies(uv_lock_content)
+    if not dependencies:
+        return
+
+    repo_url = f"https://github.com/{owner}/{repo}"
+    with driver.session() as session:
+        records = list(session.run(
+            """
+        MATCH (r:Repository {url: $repo_url})-[:HAS_BUILD]->(b:Build)
+        RETURN b.id AS id
+        ORDER BY b.startTime DESC
+        LIMIT 1
+        """,
+            repo_url=repo_url,
+        ))
+        if not records:
+            return
+        _write_dependencies(session, records[0]["id"], repo, uv_lock_content, dependencies)
+
+
 REPOS: list[tuple[str, str]] = [
     ("mlessley", "dast-bench"),
     ("mlessley", "pipeline-lens"),
@@ -131,6 +189,8 @@ def main() -> None:
     for owner, repo in REPOS:
         ingest_repository(driver, owner, repo, token=token)
         print(f"Ingested GitHub Actions build history for {owner}/{repo}.")
+        ingest_dependencies(driver, owner, repo, token=token)
+        print(f"Ingested direct dependencies for {owner}/{repo}.")
 
 
 if __name__ == "__main__":
