@@ -103,6 +103,9 @@ rewrite of it: Neo4j, a hand-written Cypher query layer, and a "Graph
 Explorer" page in the dashboard that renders results as a graph you can
 click through — identifying labels instead of raw node types, attestation
 relationships shown as edge labels instead of extra clutter on the canvas.
+
+![Graph Explorer, tracing a package's usage](docs/images/pkg-graph.png)
+
 Most of the data behind it is still a synthetic fleet, same as v1's — but
 two real repositories (`dast-bench` and this repo itself) have their actual
 GitHub Actions build history ingested, plus their real direct dependencies
